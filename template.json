@@ -99,7 +99,7 @@
             "type": "atlas",
             "only": ["virtualbox-iso"],
             "token": "{{user `atlas_token`}}",
-            "artifact": "jonasrosland/rexray",
+            "artifact": "byrnedo/docker-rexray-swarm",
             "artifact_type": "vagrant.box",
             "metadata": {
                 "created_at": "{{timestamp}}",
