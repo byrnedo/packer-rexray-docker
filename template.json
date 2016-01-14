@@ -1,0 +1,110 @@
+{
+    "variables": {
+        "aws_access_key": "",
+        "aws_secret_key": ""
+    },
+    "push": {
+        "name": "byrnedo/docker-rexray-swarm",
+        "include": [
+            "template.json",
+            "scripts/*",
+            "http/*"
+        ]
+    },
+    "builders": [
+        {
+            "type": "amazon-ebs",
+            "access_key": "{{user `aws_access_key`}}",
+            "secret_key": "{{user `aws_secret_key`}}",
+            "region": "eu-central-1",
+            "source_ami": "ami-accff2b1",
+            "instance_type": "t2.micro",
+            "ssh_username": "ubuntu",
+            "ami_name": "packer-example {{timestamp}}"
+        },
+        {
+            "type": "virtualbox-iso",
+            "boot_command": [
+                "<esc><wait>",
+                "<esc><wait>",
+                "<enter><wait>",
+                "/install/vmlinuz",
+                " auto=true",
+                " priority=critical",
+                " initrd=/install/initrd.gz",
+                " preseed/url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg",
+                " -- ",
+                "<enter>"
+            ],
+            "headless": true,
+            "boot_wait": "10s",
+            "disk_size": 40520,
+            "guest_os_type": "Ubuntu_64",
+            "http_directory": "http",
+            "iso_urls": [
+                "iso/ubuntu-14.04.3-server-amd64.iso",
+                "http://releases.ubuntu.com/14.04/ubuntu-14.04.3-server-amd64.iso"
+            ],
+            "iso_checksum_type": "md5",
+            "iso_checksum": "9e5fecc94b3925bededed0fdca1bd417",
+            "ssh_username": "vagrant",
+            "ssh_password": "vagrant",
+            "ssh_port": 22,
+            "ssh_pty" : true,
+            "ssh_wait_timeout": "10000s",
+            "shutdown_command": "echo 'vagrant'|sudo -S shutdown -P now",
+            "guest_additions_path": "VBoxGuestAdditions_{{.Version}}.iso",
+            "virtualbox_version_file": ".vbox_version",
+            "vm_name": "packer-ubuntu-14.04-amd64",
+            "vboxmanage": [
+                [ "modifyvm", "{{.Name}}", "--memory", "1024" ],
+                [ "modifyvm", "{{.Name}}", "--cpus", "2" ]
+            ]
+        }
+    ],
+    "provisioners": [
+        {
+            "type": "shell",
+            "execute_command": "echo 'vagrant'|sudo -S sh '{{.Path}}'",
+            "scripts": [
+                "scripts/base.sh"
+            ]
+        }, 
+        {
+            "type": "shell",
+            "only": ["virtualbox-iso"],
+            "execute_command": "echo 'vagrant'|sudo -S sh '{{.Path}}'",
+            "scripts": [
+                "scripts/virtualbox-iso/vagrant.sh",
+                "scripts/virtualbox-iso/virtualbox.sh"
+            ]
+        },
+        {   
+            "type":"shell",
+            "execute_command": "echo 'vagrant'|sudo -S sh '{{.Path}}'",
+            "scripts":[
+                "scripts/docker.sh",
+                "scripts/docker-user.sh",
+                "scripts/rexray.sh",
+                "scripts/cleanup.sh"
+            ]
+        }
+    ],
+    "post-processors": [
+        [{
+            "type": "vagrant",
+            "keep_input_artifact": false
+        },
+        {
+            "type": "atlas",
+            "only": ["virtualbox-iso"],
+            "token": "{{user `atlas_token`}}",
+            "artifact": "jonasrosland/rexray",
+            "artifact_type": "vagrant.box",
+            "metadata": {
+                "created_at": "{{timestamp}}",
+                "provider": "virtualbox"
+            }
+        }]
+    ]
+}
