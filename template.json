@@ -84,8 +84,9 @@
             "execute_command": "echo 'vagrant'|sudo -S sh '{{.Path}}'",
             "scripts":[
                 "scripts/docker.sh",
-                "scripts/docker-user.sh",
-                "scripts/rexray.sh",
+                "scripts/{{build_type}}/docker-user.sh",
+                "scripts/{{build_type}}/rexray.sh",
+                "scripts/{{build_type}}/cleanup.sh",
                 "scripts/cleanup.sh"
             ]
         }

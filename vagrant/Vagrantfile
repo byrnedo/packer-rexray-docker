@@ -1,0 +1,153 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+#
+
+
+Vagrant.configure(2) do |config|
+
+
+    # Amount of nodes to start
+    nodes = 3
+    get_consul_ip_address_cmd = %Q(vagrant ssh rexray-consul -c 'ifconfig eth1 | grep \"inet addr\" 2>&1 | sed \"s/.*inet addr:\\([0-9.]*\\) .*/\\1/\"')
+
+    (1..nodes).each do |i|
+        nodeName = case i
+        when 1
+            "consul"
+        when 2
+            "master"
+        else
+            i - 2
+        end
+
+        config.vm.define "rexray-#{nodeName}" do |node|
+            node.vm.network "private_network", type: "dhcp"
+            node.vm.box = "byrnedo/docker-rexray-swarm"
+
+            # Add a SATA controlle with 30 ports to the VM, so REX-Ray can add disks on the fly
+            node.vm.provider :virtualbox do |vb|
+                vb.customize ["storagectl", :id, "--add", "sata", "--controller", "IntelAhci", "--name", "SATA", "--portcount", 30, "--hostiocache", "on"]
+                vb.customize ["modifyvm", :id, "--macaddress1", "auto"]
+            end
+
+            # Set the current $PWD as the place where you will
+            # store the VMDKs that are attached to the VM.
+            dir = "#{ENV['PWD']}/Volumes"
+
+            node.vm.provision "shell", inline: <<-SHELL
+            ## Because the docker id will be the same for all nodes otherwise
+            rm -f /root/.docker/key.json
+
+            ## Optionally get latest stable REX-Ray
+            #sudo curl -sSL https://dl.bintray.com/emccode/rexray/install | sh -s stable
+
+            ## Optionally get latest release candidate REX-Ray
+            #sudo curl -sSL https://dl.bintray.com/emccode/rexray/install | sh -s staged
+
+            ## Optionally update the volume path for pwd Volumes dir
+            sed -i 's@\\(.*volumePath:\\).*@\\1 \"#{dir}\"@' /etc/rexray/config.yml
+
+            ## Optionally set preemption
+            sed -i 's@\\(.*preempt:\\).*@\\1 true@' /etc/rexray/config.yml
+
+            service rexray stop 
+            service rexray start
+            SHELL
+
+            ## Install docker with docker-machine on each host
+            node.trigger.after :up, :stdout => true, :stderr => true do
+
+                get_ip_address_cmd = %Q(vagrant ssh #{@machine.name} -c 'ifconfig eth1 | grep \"inet addr\" 2>&1 | sed \"s/.*inet addr:\\([0-9.]*\\) .*/\\1/\"')
+                restart_rexray_cmd = "vagrant ssh #{@machine.name} -c 'sudo service rexray stop; sudo service rexray start;'"
+
+                output = `#{get_ip_address_cmd}`
+
+                ip = "#{output.strip}"
+
+                puts "==> #{@machine.name}: Available on DHCP IP address #{ip}"
+                privateKeyPath = @machine.ssh_info()[:private_key_path][0]
+
+
+                machineExists = system("docker-machine inspect #{@machine.name} 2>&1 > /dev/null")
+
+                puts "==> #{@machine.name}: Provisioning with docker-machine..."
+                case nodeName 
+                when "consul"
+                    # consul time
+                    puts "==> #{@machine.name}: As consul"
+
+                    if ! machineExists then
+                        cmd = "docker-machine create -d generic \\
+                                --engine-opt=\"dns=172.17.0.1\" \\
+                                --engine-opt=\"dns=8.8.8.8\" \\
+                                --generic-ssh-user vagrant \\
+                                --generic-ssh-key #{privateKeyPath} \\
+                                --generic-ip-address #{ip} #{@machine.name}"
+                        puts "==> #{@machine.name}: Running `#{cmd}`"
+                        if ! system(cmd) then
+                            raise 'command failed'
+                        end
+                    end
+
+                    cmd = "vagrant ssh rexray-#{nodeName} -c \"bash /vagrant/create_consul_agent.sh\""
+                    if ! system(cmd) then
+                        raise 'command failed'
+                    end
+                    
+
+                when "master"
+                    # master
+                    puts "==> #{@machine.name}: As master"
+                
+
+                    if ! machineExists then
+                        consulIp = `#{get_consul_ip_address_cmd}`.strip
+                        cmd = "docker-machine create -d generic \\
+                        --swarm \\
+                        --swarm-master  \\
+                        --swarm-discovery=\"consul://#{consulIp}:8500\" \\
+                        --engine-label=\"role=infra\" \\
+                        --engine-opt=\"dns=172.17.0.1\" \\
+                        --engine-opt=\"dns=8.8.8.8\" \\
+                        --engine-opt=\"cluster-store=consul://#{consulIp}:8500\" \\
+                        --engine-opt=\"cluster-advertise=eth1:2376\" \\
+                        --generic-ssh-user vagrant \\
+                        --generic-ssh-key #{privateKeyPath} \\
+                        --generic-ip-address #{ip} #{@machine.name}"
+                        puts "==> #{@machine.name}: Running `#{cmd}`"
+                        if ! system(cmd) then
+                            raise 'command failed'
+                        end
+                    end
+
+                else
+                    puts "==> #{@machine.name}: As node"
+
+
+                    if ! machineExists then
+                        consulIp = `#{get_consul_ip_address_cmd}`.strip
+                        cmd = "docker-machine create -d generic \\
+                        --swarm \\
+                        --swarm-discovery=\"consul://#{consulIp}:8500\" \\
+                        --engine-label=\"role=service\" \\
+                        --engine-opt=\"dns=172.17.0.1\" \\
+                        --engine-opt=\"dns=8.8.8.8\" \\
+                        --engine-opt=\"cluster-store=consul://#{consulIp}:8500\" \\
+                        --engine-opt=\"cluster-advertise=eth1:2376\" \\
+                        --generic-ssh-user vagrant \\
+                        --generic-ssh-key #{privateKeyPath} \\
+                        --generic-ip-address #{ip} #{@machine.name}"
+                        puts "==> #{@machine.name}: Running `#{cmd}`"
+                        if ! system(cmd) then
+                            raise 'command failed'
+                        end
+                    end
+                end
+
+                system(restart_rexray_cmd)
+
+                @logger.debug "Finished running :after trigger"
+            end
+        end
+    end
+end
