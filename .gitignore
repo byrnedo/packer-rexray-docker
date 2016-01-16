@@ -2,3 +2,5 @@ output-virtualbox-iso/
 packer_cache/
 *.box
 vagrant/.vagrant/*
+vagrant/Volumes/*
+!vagrant/Volumes/.gitkeep
