@@ -23,6 +23,7 @@ case $RUNNING in
     *)
     docker run -d \
         --name consul-agent \
+        --restart always \
         -p ${CONSUL_IP}:8300:8300 \
         -p ${CONSUL_IP}:8301:8301 \
         -p ${CONSUL_IP}:8301:8301/udp \
