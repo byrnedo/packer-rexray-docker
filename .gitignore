@@ -4,3 +4,4 @@ packer_cache/
 vagrant/.vagrant/*
 vagrant/Volumes/*
 !vagrant/Volumes/.gitkeep
+.idea

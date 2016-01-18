@@ -58,7 +58,8 @@
             "vm_name": "packer-ubuntu-14.04-amd64",
             "vboxmanage": [
                 [ "modifyvm", "{{.Name}}", "--memory", "1024" ],
-                [ "modifyvm", "{{.Name}}", "--cpus", "2" ]
+                [ "modifyvm", "{{.Name}}", "--cpus", "2" ],
+                [ "storagectl", "{{.Name}}", "--add", "sata", "--controller", "IntelAhci", "--name", "SATA", "--portcount", 30, "--hostiocache", "on"]
             ]
         }
     ],
